@@ -1,0 +1,68 @@
+# Orchestration du prototole : trois conteneurs sur un reseau bridge isole.
+#
+# Confinement des cles : le repertoire ./partage, produit par la phase 0
+# d'amorcage, contient les cles reparties en sous-repertoires. Chaque conteneur
+# ne monte, en lecture seule, que le fichier qui le concerne :
+#   - le KDC monte la base complete ;
+#   - le service ne monte que K_S ;
+#   - le client ne monte que K_C.
+# Aucune cle ne transite par le reseau : le partage se fait par volume monte,
+# hors du canal operationnel, conformement a la phase 0 de la conception.
+
+services:
+
+  kdc:
+    build: .
+    command: python /app/entrees/lancer_kdc.py
+    environment:
+      KDC_BASE: /cles/base.json
+      KDC_HOTE: 0.0.0.0
+      KDC_PORT: "9001"
+      TRACE_JSON: "${TRACE_JSON:-0}"
+    volumes:
+      - ./partage/kdc:/cles:ro
+    ports:
+      - "9001:9001"
+    networks:
+      - lan_protege
+
+  service:
+    build: .
+    command: python /app/entrees/lancer_service.py
+    environment:
+      SERVICE_CLE: /cles/K_S.key
+      SERVICE_ID: service_S
+      SERVICE_HOTE: 0.0.0.0
+      SERVICE_PORT: "9002"
+      TRACE_JSON: "${TRACE_JSON:-0}"
+    volumes:
+      - ./partage/service:/cles:ro
+    ports:
+      - "9002:9002"
+    networks:
+      - lan_protege
+
+  client:
+    build: .
+    command: python /app/entrees/lancer_client.py
+    environment:
+      CLIENT_CLE: /cles/K_C.key
+      CLIENT_ID: client_A
+      CLIENT_SERVICE: service_S
+      KDC_HOTE: kdc
+      KDC_PORT: "9001"
+      SERVICE_HOTE: service
+      SERVICE_PORT: "9002"
+      CLIENT_REPETITIONS: "100"
+      TRACE_JSON: "${TRACE_JSON:-0}"
+    volumes:
+      - ./partage/client:/cles:ro
+    depends_on:
+      - kdc
+      - service
+    networks:
+      - lan_protege
+
+networks:
+  lan_protege:
+    driver: bridge

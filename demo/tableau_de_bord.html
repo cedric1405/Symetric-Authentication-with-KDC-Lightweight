@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>KDC — visualisation en direct</title>
+<style>
+  :root {
+    --fond: #10151c;
+    --panneau: #171e28;
+    --bordure: #2a3441;
+    --texte: #e6ecf3;
+    --texte-att: #8a97a8;
+    --bleu: #4c8dff;
+    --vert: #33c17b;
+    --rouge: #e5484d;
+    --orange: #f0a93e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, sans-serif;
+    background: var(--fond);
+    color: var(--texte);
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+  header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--bordure);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  header h1 {
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0;
+    flex: 1 1 auto;
+  }
+  #statut {
+    font-size: 12px;
+    color: var(--texte-att);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  #point-statut {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--rouge);
+    display: inline-block;
+  }
+  #point-statut.connecte { background: var(--vert); }
+  button {
+    background: var(--panneau);
+    color: var(--texte);
+    border: 1px solid var(--bordure);
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  button:hover { border-color: var(--bleu); }
+  button.attaque:hover { border-color: var(--rouge); }
+  main {
+    flex: 1 1 auto;
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    min-height: 0;
+  }
+  #scene {
+    position: relative;
+    overflow: hidden;
+  }
+  .acteur {
+    position: absolute;
+    width: 150px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--bordure);
+    background: var(--panneau);
+    text-align: center;
+    transition: box-shadow 0.25s, border-color 0.25s, opacity 0.4s;
+  }
+  .acteur .nom { font-weight: 600; font-size: 13px; }
+  .acteur .sous { font-size: 11px; color: var(--texte-att); margin-top: 2px; }
+  #boite-client   { left: 40px;  top: 260px; }
+  #boite-kdc      { left: 50%; top: 40px; transform: translateX(-50%); }
+  #boite-service  { right: 40px; top: 260px; }
+  #boite-attaquant {
+    left: 40px; top: 420px;
+    border-color: var(--rouge);
+    opacity: 0;
+    pointer-events: none;
+  }
+  #boite-attaquant.visible { opacity: 1; }
+  .flash-vert   { box-shadow: 0 0 0 3px var(--vert);   border-color: var(--vert); }
+  .flash-rouge  { box-shadow: 0 0 0 3px var(--rouge);  border-color: var(--rouge); }
+  .flash-orange { box-shadow: 0 0 0 3px var(--orange); border-color: var(--orange); }
+  .puce {
+    position: absolute;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+    transform: translate(-50%, -50%);
+    transition: left 0.65s ease, top 0.65s ease;
+    z-index: 5;
+  }
+  .puce.bleu   { background: rgba(76,141,255,0.18);  color: var(--bleu);   border: 1px solid var(--bleu); }
+  .puce.vert   { background: rgba(51,193,123,0.18);   color: var(--vert);  border: 1px solid var(--vert); }
+  .puce.orange { background: rgba(240,169,62,0.18);   color: var(--orange); border: 1px solid var(--orange); }
+  #journal {
+    border-left: 1px solid var(--bordure);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  #journal-entete {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--bordure);
+    font-size: 12px;
+    color: var(--texte-att);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #journal-lignes {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 8px 14px;
+    font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 11.5px;
+    line-height: 1.6;
+  }
+  .ligne { white-space: pre-wrap; word-break: break-word; }
+  .ligne .acteur-tag { color: var(--texte-att); }
+  .ligne.rouge  { color: var(--rouge); }
+  .ligne.vert   { color: var(--vert); }
+  .ligne.orange { color: var(--orange); }
+  #legende {
+    padding: 10px 20px 14px;
+    font-size: 11px;
+    color: var(--texte-att);
+    border-top: 1px solid var(--bordure);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>KDC — visualisation en direct</h1>
+  <button id="bouton-echange">Déclencher un échange</button>
+  <button id="bouton-attaque" class="attaque">Déclencher une attaque (rejeu)</button>
+  <div id="statut"><span id="point-statut"></span><span id="texte-statut">connexion...</span></div>
+</header>
+
+<main>
+  <div id="scene">
+    <div class="acteur" id="boite-client">
+      <div class="nom">Client</div>
+      <div class="sous">client_A</div>
+    </div>
+    <div class="acteur" id="boite-kdc">
+      <div class="nom">KDC</div>
+      <div class="sous">tiers de confiance</div>
+    </div>
+    <div class="acteur" id="boite-service">
+      <div class="nom">Service</div>
+      <div class="sous">service_S</div>
+    </div>
+    <div class="acteur" id="boite-attaquant">
+      <div class="nom">Attaquant</div>
+      <div class="sous">rejeu du MSG3 capturé</div>
+    </div>
+  </div>
+  <div id="journal">
+    <div id="journal-entete">
+      <span>Journal des événements</span>
+      <button id="bouton-vider" style="padding:3px 8px;font-size:11px;">Vider</button>
+    </div>
+    <div id="journal-lignes"></div>
+    <div id="legende">
+      Vert = étape acceptée · Rouge = rejet ou échec · Orange = tentative
+      d'attaque · Bleu = message en transit.
+    </div>
+  </div>
+</main>
+
+<script>
+const scene = document.getElementById("scene");
+const boites = {
+  client: document.getElementById("boite-client"),
+  kdc: document.getElementById("boite-kdc"),
+  service: document.getElementById("boite-service"),
+  attaquant: document.getElementById("boite-attaquant"),
+};
+const journalLignes = document.getElementById("journal-lignes");
+
+function centreDe(id) {
+  const boite = boites[id];
+  const r = boite.getBoundingClientRect();
+  const s = scene.getBoundingClientRect();
+  return { x: r.left - s.left + r.width / 2, y: r.top - s.top + r.height / 2 };
+}
+
+function flasher(id, couleur, duree) {
+  const boite = boites[id];
+  if (id === "attaquant") boite.classList.add("visible");
+  const classe = "flash-" + couleur;
+  boite.classList.add(classe);
+  setTimeout(() => boite.classList.remove(classe), duree || 700);
+}
+
+function envoyerPuce(depuis, vers, libelle, couleur) {
+  if (vers === "attaquant" || depuis === "attaquant") {
+    boites.attaquant.classList.add("visible");
+  }
+  const depart = centreDe(depuis);
+  const arrivee = centreDe(vers);
+  const puce = document.createElement("div");
+  puce.className = "puce " + couleur;
+  puce.textContent = libelle;
+  puce.style.left = depart.x + "px";
+  puce.style.top = depart.y + "px";
+  scene.appendChild(puce);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      puce.style.left = arrivee.x + "px";
+      puce.style.top = arrivee.y + "px";
+    });
+  });
+  setTimeout(() => {
+    puce.remove();
+    flasher(vers, couleur === "orange" ? "orange" : "vert", 500);
+  }, 700);
+}
+
+function ajouterLigne(texte, classe) {
+  const div = document.createElement("div");
+  div.className = "ligne" + (classe ? " " + classe : "");
+  div.textContent = texte;
+  journalLignes.appendChild(div);
+  journalLignes.scrollTop = journalLignes.scrollHeight;
+}
+
+const LIBELLES = {
+  msg1_recu: "MSG1 reçu",
+  identite_inconnue: "identité inconnue — rejet",
+  msg2_envoye: "MSG2 envoyé (ticket)",
+  erreur: "erreur",
+  msg3_incomplet: "MSG3 incomplet — rejet",
+  msg3_recu: "MSG3 reçu",
+  ticket_ouvert: "ticket ouvert",
+  ticket_illisible: "ticket illisible — rejet",
+  ticket_expire: "ticket expiré — rejet",
+  authentifiant_illisible: "authentifiant illisible — rejet",
+  identites_incoherentes: "identités incohérentes — rejet",
+  horodatage_hors_fenetre: "horodatage hors fenêtre — rejet",
+  rejeu_detecte: "REJEU DÉTECTÉ — rejet",
+  msg4_envoye: "MSG4 envoyé",
+  msg1_envoye: "MSG1 envoyé",
+  msg2_recu: "MSG2 reçu",
+  nonce1_invalide: "nonce_1 non confirmé — échec",
+  service_inattendu: "service inattendu — échec",
+  msg3_envoye: "MSG3 envoyé",
+  msg4_absent: "pas de MSG4 — échec",
+  msg4_recu: "MSG4 reçu",
+  authentification_reussie: "authentification mutuelle réussie",
+  authentification_echouee: "authentification échouée",
+  rejeu_tente: "tentative de rejeu du MSG3 capturé",
+  rejeu_accepte: "ANOMALIE : le rejeu a été accepté",
+  rejeu_refuse: "attaque repoussée : rejeu refusé",
+};
+
+function traiter(evt) {
+  const acteur = evt.acteur;
+  const nom = evt.evenement;
+  const libelle = LIBELLES[nom] || nom;
+
+  if (nom === "log") {
+    ajouterLigne("[" + acteur + "] " + evt.texte);
+    return;
+  }
+
+  const idClient = evt.id_client ? " (" + evt.id_client + ")" : "";
+  let classeJournal = "";
+
+  switch (acteur + ":" + nom) {
+    case "client:msg1_envoye":
+      envoyerPuce("client", "kdc", "MSG1", "bleu"); break;
+    case "kdc:identite_inconnue":
+      flasher("kdc", "rouge"); classeJournal = "rouge"; break;
+    case "kdc:msg2_envoye":
+      envoyerPuce("kdc", "client", "MSG2 (ticket)", "bleu"); break;
+    case "kdc:erreur":
+      flasher("kdc", "rouge"); classeJournal = "rouge"; break;
+    case "client:nonce1_invalide":
+    case "client:service_inattendu":
+      flasher("client", "rouge"); classeJournal = "rouge"; break;
+    case "client:msg3_envoye":
+      envoyerPuce("client", "service", "MSG3", "bleu"); break;
+    case "client:msg4_absent":
+      flasher("client", "rouge"); classeJournal = "rouge"; break;
+    case "client:authentification_reussie":
+      flasher("client", "vert", 900); classeJournal = "vert"; break;
+    case "client:authentification_echouee":
+      flasher("client", "rouge", 900); classeJournal = "rouge"; break;
+    case "service:msg3_incomplet":
+    case "service:ticket_illisible":
+    case "service:ticket_expire":
+    case "service:authentifiant_illisible":
+    case "service:identites_incoherentes":
+    case "service:horodatage_hors_fenetre":
+      flasher("service", "rouge"); classeJournal = "rouge"; break;
+    case "service:rejeu_detecte":
+      flasher("service", "orange", 900); classeJournal = "orange"; break;
+    case "service:msg4_envoye":
+      envoyerPuce("service", "client", "MSG4", "vert"); break;
+    case "attaquant:rejeu_tente":
+      envoyerPuce("attaquant", "service", "MSG3 (rejeu)", "orange"); break;
+    case "attaquant:rejeu_accepte":
+      flasher("attaquant", "rouge", 900); classeJournal = "rouge"; break;
+    case "attaquant:rejeu_refuse":
+      flasher("attaquant", "orange", 900); classeJournal = "orange"; break;
+    default:
+      break;
+  }
+
+  ajouterLigne("[" + acteur + "] " + libelle + idClient, classeJournal);
+}
+
+function connecter() {
+  const source = new EventSource("/evenements");
+  const point = document.getElementById("point-statut");
+  const texte = document.getElementById("texte-statut");
+  source.onopen = () => {
+    point.classList.add("connecte");
+    texte.textContent = "connecté";
+  };
+  source.onerror = () => {
+    point.classList.remove("connecte");
+    texte.textContent = "reconnexion...";
+  };
+  source.onmessage = (message) => {
+    try {
+      traiter(JSON.parse(message.data));
+    } catch (erreur) {
+      // ligne non conforme : ignoree.
+    }
+  };
+}
+
+document.getElementById("bouton-echange").addEventListener("click", () => {
+  fetch("/declencher/echange", { method: "POST" });
+});
+document.getElementById("bouton-attaque").addEventListener("click", () => {
+  fetch("/declencher/attaque", { method: "POST" });
+});
+document.getElementById("bouton-vider").addEventListener("click", () => {
+  journalLignes.innerHTML = "";
+});
+
+connecter();
+</script>
+</body>
+</html>

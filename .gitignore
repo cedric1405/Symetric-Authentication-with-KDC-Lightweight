@@ -1,0 +1,14 @@
+# Clés générées par la phase 0 d'amorçage — jamais versionnées.
+# Régénérables via : python3 amorce/phase0.py ./partage
+partage/
+
+# Artefacts Python
+__pycache__/
+*.pyc
+
+# Session locale de l'assistant (non liée au projet)
+.claude/
+
+# Débris accidentels
+demo.zip
+mesures.py;C/
